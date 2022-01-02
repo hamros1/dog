@@ -5,6 +5,153 @@ alias PXcbMappingNotifyEvent = Pointer(XcbMappingNotifyEvent)
 alias PXcbConfigureNotifyEvent = Pointer(XcbConfigureNotifyEvent)
 alias PXcbButtonPressEvent = Pointer(XcbButtonPressEvent)
 alias PXcbMotionNotifyEvent = Pointer(XcbMotionNotifyEvent)
+alias PXcbConfigureNotifyEvent = Pointer(XcbConfigureNotifyEvent)
+alias PXcbKeyPressEvent = Pointer(PXcbKeyPressEvent)
+
+def changescreen(arg)
+end
+
+def cursor_move(arg)
+	cases = arg.i % 4
+	arg.i < 4 ? speed = movements[3] : speed = movements[2]
+
+	case cases
+	when CURSOR_UP
+		xcb_warp_pointer(conn, XCB_NONE, XCB_NONE, 0, 0, 0, 0, 0, -speed)
+		break
+	when CURSOR_DOWN
+		xcb_warp_pointer(conn, XCB_NONE, XCB_NONE, 0, 0, 0, 0, 0, speed)
+		break
+	when CURSOR_RIGHT
+		xcb_warp_pointer(conn, XCB_NONE, XCB_NONE, 0, 0, 0, 0, 0, speed)
+		break
+	when CUSOR_LEFT
+		xcb_warp_pointer(conn, XCB_NONE, XCB_NONE, 0, 0, 0, 0, 0, -speed)
+		break
+	end
+end
+
+def xcb_get_keysym(keycode)
+	return 0 if keysyms = xcb_key_symbols_alloc(conn)
+
+	keysym = xcb_key_symbols_get_keysym(keysyms, keycode, 0)
+	xcb_key_symbols_free(keysyms)
+	
+	return keysym
+end
+
+def circulaterequest(e)
+	ev = ev.as PXcbCirculateRequestEvent
+	xcb_circulate_window(conn, e.window, e.place)
+end
+
+def handle_keypress(e)
+	ev = e.as PXcbKeyPressEvent
+	keysym = xcb_get_keysym(ev.detail)
+
+	keys.each do |index|
+		if keysym == key.keysym && cleanmask(key.mod) == cleanmask(ev.state) && key.func 
+			key.func(key.arg)
+			break
+		end
+	end
+end
+
+def configwin(win, mask, wc)
+	values = StaticArray(UInt32, 7)
+	index = -1
+
+	if mask & XCB_CONFIG_WINDOW_X
+		mask |= XCB_CONFIG_WINDOW_X
+		i += 1
+		values[index] = wc.x
+	end
+
+	if mask & XCB_CONFIG_WINDOW_Y
+		mask |= XCB_CONFIG_WINDOW_Y
+		i += 1
+		values[index] = wc.y
+	end
+
+	if mask & XCB_CONFIG_WINDOW_WIDTH
+		mask |= XCB_CONFIG_WINDOW_WIDTH
+		i += 1
+		values[index] = wc.width
+	end
+
+	if mask & XCB_CONFIG_WINDOW_HEIGHT
+		mask |= XCB_CONFIG_WINDOW_HEIGHT
+		i += 1
+		values[index] = wc.height
+	end
+
+	if mask & XCB_CONFIG_WINDOW_SIBLING
+		mask |= XCB_CONFIG_WINDOW_SIBLING
+		i += 1
+		values[index] = wc.sibling
+	end
+
+	if mask & XCB_CONFIG_WINDOW_STACK_MODE
+		mask |= XCB_CONFIG_WINDOW_STACK_MODE
+		i += 1
+		values[index] = wc.stack_mode
+	end
+
+	xcb_configure_window(conn, win, mask, values)
+	xcb_flush(conn)
+end
+
+
+def configurerequest
+	e = ev.as PXcbConfigureNotifyEvent
+
+	mon_x, mon_y = 0
+	mon_width, mon_height = 0
+	values = StaticArray(UInt32, 1)
+
+	if client = findclient(e.window)
+		getmonsize(1, mon_x, mon_y, mon_width, mon_height, client)
+
+		if e.value_mask & XCB_CONFIG_WINDOW_WIDTH
+			if !client.maxed && !client.hormaxed
+				client.height = e.height
+			end
+		end
+
+		if e.value_mask & XCB_CONFIG_WINDOW_HEIGHT
+			if !client.maxed && !client.vertmaxed
+				client.height = e.height
+			end
+		end
+
+		if e.value_mask & XCB_CONFIG_WINDOW_X
+			if !client.maxed && !client.hormaxed
+				client.x = e.x
+			end
+		end
+
+		if e.value_mask & XCB_CONFIG_WINDOW_SIBLING
+			values[0] = e.sibling
+			xcb_configure_window(conn, e.window, XCB_CONFIG_WINDOW_SIBLING, values)
+		end
+
+		if !client.maxed
+			resizelim(client)
+			movelim(client)
+			fitonscreen(client)
+		end
+
+		setborders(client, true)
+	else
+		wc.x = e.x
+		wc.y = e.y
+		wc.width = e.width
+		wc.height = e.height
+		wc.sibling = e.sibling
+		wc.stackmode = e.stack_mode
+		configwin(e.window, e.value_mask, wc)
+	end
+end
 
 def create_font_cursor(conn, glyph)
 	cursor_font = xcb_generate(conn)
